@@ -973,9 +973,33 @@ function revisarNotificaciones(){
   });
 }
 
+let refrescando = false;
+async function refrescar(){
+  if(refrescando) return;
+  refrescando = true;
+  try{
+    await cargarDatos();
+    renderTodo();
+  } finally {
+    refrescando = false;
+  }
+}
+
+function suscribirCambiosEnVivo(){
+  try{
+    supabaseClient
+      .channel('cambios-hogar')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transacciones' }, () => refrescar())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pagos' }, () => refrescar())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fijos' }, () => refrescar())
+      .subscribe();
+  }catch(e){
+    console.error('No se pudo suscribir a cambios en vivo:', e);
+  }
+}
+
 document.getElementById('btnActualizar').addEventListener('click', async () => {
-  await cargarDatos();
-  renderTodo();
+  await refrescar();
 });
 
 document.getElementById('btnNotif').addEventListener('click', () => {
@@ -1055,6 +1079,8 @@ document.getElementById('formVencimiento').addEventListener('submit', async (e) 
   try{ generarFijos(); }catch(e){ console.error('Error generando fijos:', e); }
   await guardarDatos();
   renderTodo();
+  suscribirCambiosEnVivo();
+  setInterval(refrescar, 15000);
 })();
 </script>
 </body>
