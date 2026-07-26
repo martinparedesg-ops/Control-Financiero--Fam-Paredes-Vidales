@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -136,6 +137,7 @@
   }
   .stat.ingreso .amount{color:var(--ledger-green);}
   .stat.gasto .amount{color:var(--margin-red);}
+  .stat.pendiente .amount{color:var(--gold);}
 
   /* Tabs styled like ledger index dividers */
   nav.tabs{
@@ -422,6 +424,10 @@
         <div class="stat gasto">
           <div class="label">Gastos (mes)</div>
           <div class="amount" id="gastosMes">S/ 0.00</div>
+        </div>
+        <div class="stat pendiente">
+          <div class="label">Pendiente de pago</div>
+          <div class="amount" id="pendientePago">S/ 0.00</div>
         </div>
       </div>
     </div>
@@ -918,8 +924,12 @@ function renderResumen(){
   document.getElementById('gastosMes').textContent = fmt(gastosMes);
 
   const alertBox = document.getElementById('alertBox');
-  const pendientes = data.pagos
-    .filter(p => !(p.fijoLinkId && data.transacciones.some(t => t.fijoId===p.fijoLinkId && t.fecha.slice(0,7)===mesActual)))
+  const pagosPendientesTodos = data.pagos
+    .filter(p => !(p.fijoLinkId && data.transacciones.some(t => t.fijoId===p.fijoLinkId && t.fecha.slice(0,7)===mesActual)));
+  const totalPendiente = pagosPendientesTodos.reduce((s,p) => s+p.monto, 0);
+  document.getElementById('pendientePago').textContent = fmt(totalPendiente);
+
+  const pendientes = pagosPendientesTodos
     .map(p => ({...p, dias: diasHasta(p.fechaVencimiento)}))
     .filter(p => p.dias <= DIAS_ALERTA)
     .sort((a,b)=>a.dias-b.dias);
