@@ -464,6 +464,7 @@
     <button data-tab="fijos">Fijos</button>
     <button data-tab="registrar-pagos">Registrar pagos</button>
     <button data-tab="vencimientos">Vencimientos</button>
+    <button data-tab="historial">Historial</button>
   </nav>
 
   <main>
@@ -579,6 +580,21 @@
 
       <h3>Pagos pendientes</h3>
       <div id="listaVencimientos"></div>
+    </section>
+
+    <section id="tab-historial">
+      <h2>Historial mensual</h2>
+      <div id="historialMensual"></div>
+
+      <h3>Categorías de gasto</h3>
+      <div id="categoriasGasto"></div>
+
+      <h3>Categorías de ingreso</h3>
+      <div id="categoriasIngreso"></div>
+
+      <h3>Gastos que se repiten mes a mes</h3>
+      <p class="empty" style="padding:0 0 10px 0;">Gastos con la misma descripción registrados en 2 o más meses distintos — candidatos a marcarlos como fijos.</p>
+      <div id="gastosRepetitivos"></div>
     </section>
   </main>
 
@@ -1074,6 +1090,9 @@ function renderTodo(){
   try{ renderGastosFijosDefiniciones(); }catch(e){ console.error('Error en definiciones de gastos fijos:', e); }
   try{ renderGastosFijosMes(); }catch(e){ console.error('Error en gastos fijos:', e); }
   try{ renderVencimientos(); }catch(e){ console.error('Error en vencimientos:', e); }
+  try{ renderHistorialMensual(); }catch(e){ console.error('Error en historial mensual:', e); }
+  try{ renderCategorias(); }catch(e){ console.error('Error en categorías:', e); }
+  try{ renderRepetitivos(); }catch(e){ console.error('Error en gastos repetitivos:', e); }
   try{ revisarNotificaciones(); }catch(e){ console.error('Error en notificaciones:', e); }
 }
 
@@ -1121,6 +1140,78 @@ async function marcarPagado(id){
     await eliminarPagoRemoto(id);
   }
   renderTodo();
+}
+
+function nombreMesLegible(mesStr){
+  const [y,m] = mesStr.split('-');
+  const nombres = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  return nombres[parseInt(m,10)-1]+' '+y;
+}
+
+function renderHistorialMensual(){
+  const cont = document.getElementById('historialMensual');
+  if(data.transacciones.length === 0){
+    cont.innerHTML = '<p class="empty">Todavía no hay movimientos para mostrar historial.</p>';
+    return;
+  }
+  const porMes = {};
+  data.transacciones.forEach(t => {
+    const mes = t.fecha.slice(0,7);
+    if(!porMes[mes]) porMes[mes] = { ingresos: 0, gastos: 0 };
+    porMes[mes][t.tipo === 'ingreso' ? 'ingresos' : 'gastos'] += t.monto;
+  });
+  const meses = Object.keys(porMes).sort().reverse();
+  cont.innerHTML = `<table><thead><tr><th>Mes</th><th style="text-align:right;">Ingresos</th><th style="text-align:right;">Gastos</th><th style="text-align:right;">Balance</th></tr></thead><tbody>`
+    + meses.map(m => {
+        const { ingresos, gastos } = porMes[m];
+        const balance = ingresos - gastos;
+        return `<tr>
+          <td>${nombreMesLegible(m)}</td>
+          <td class="amount ingreso">${fmt(ingresos)}</td>
+          <td class="amount gasto">${fmt(gastos)}</td>
+          <td class="amount ${balance>=0?'ingreso':'gasto'}">${fmt(balance)}</td>
+        </tr>`;
+      }).join('')
+    + '</tbody></table>';
+}
+
+function renderCategorias(){
+  const totalesGasto = {};
+  const totalesIngreso = {};
+  data.transacciones.forEach(t => {
+    const bucket = t.tipo === 'gasto' ? totalesGasto : totalesIngreso;
+    if(!bucket[t.categoria]) bucket[t.categoria] = { monto: 0, veces: 0 };
+    bucket[t.categoria].monto += t.monto;
+    bucket[t.categoria].veces++;
+  });
+  function tabla(bucket, claseMonto){
+    const cats = Object.keys(bucket).sort((a,b) => bucket[b].monto - bucket[a].monto);
+    if(cats.length === 0) return '<p class="empty">Sin datos todavía.</p>';
+    return `<table><thead><tr><th>Categoría</th><th style="text-align:right;">Veces</th><th style="text-align:right;">Total</th></tr></thead><tbody>`
+      + cats.map(c => `<tr><td>${c}</td><td style="text-align:right;">${bucket[c].veces}</td><td class="amount ${claseMonto}">${fmt(bucket[c].monto)}</td></tr>`).join('')
+      + '</tbody></table>';
+  }
+  document.getElementById('categoriasGasto').innerHTML = tabla(totalesGasto, 'gasto');
+  document.getElementById('categoriasIngreso').innerHTML = tabla(totalesIngreso, 'ingreso');
+}
+
+function renderRepetitivos(){
+  const cont = document.getElementById('gastosRepetitivos');
+  const grupos = {};
+  data.transacciones.filter(t => t.tipo === 'gasto').forEach(t => {
+    const clave = t.descripcion.trim().toLowerCase();
+    if(!grupos[clave]) grupos[clave] = { descripcion: t.descripcion, categoria: t.categoria, meses: new Set(), monto: 0 };
+    grupos[clave].meses.add(t.fecha.slice(0,7));
+    grupos[clave].monto += t.monto;
+  });
+  const lista = Object.values(grupos).filter(g => g.meses.size >= 2).sort((a,b) => b.meses.size - a.meses.size);
+  if(lista.length === 0){
+    cont.innerHTML = '<p class="empty">Todavía no hay gastos que se repitan en varios meses.</p>';
+    return;
+  }
+  cont.innerHTML = `<table><thead><tr><th>Descripción</th><th>Categoría</th><th style="text-align:right;">Meses</th><th style="text-align:right;">Total acumulado</th></tr></thead><tbody>`
+    + lista.map(g => `<tr><td>${g.descripcion}</td><td>${g.categoria}</td><td style="text-align:right;">${g.meses.size}</td><td class="amount gasto">${fmt(g.monto)}</td></tr>`).join('')
+    + '</tbody></table>';
 }
 
 function revisarNotificaciones(){
