@@ -615,37 +615,74 @@ async function cargarDatos(){
   normalizarDatos();
 }
 
-async function guardarDatos(){
+function filaMovimiento(t){
+  return { id: t.id, tipo: t.tipo, descripcion: t.descripcion, categoria: t.categoria, monto: t.monto, fecha: t.fecha, fijo_id: t.fijoId || null };
+}
+function filaPago(p){
+  return { id: p.id, descripcion: p.descripcion, categoria: p.categoria, monto: p.monto, fecha_vencimiento: p.fechaVencimiento, recurrente: !!p.recurrente, fijo_link_id: p.fijoLinkId || null };
+}
+function filaFijo(f){
+  return { id: f.id, tipo: f.tipo, descripcion: f.descripcion, categoria: f.categoria, monto: f.monto, dia_mes: f.diaMes, fecha_inicio: f.fechaInicio };
+}
+
+async function guardarMovimiento(t){
   try{
     marcarSync('', 'Guardando…');
-    await supabaseClient.from('transacciones').delete().neq('id', '');
-    if(data.transacciones.length){
-      const { error } = await supabaseClient.from('transacciones').insert(data.transacciones.map(t => ({
-        id: t.id, tipo: t.tipo, descripcion: t.descripcion, categoria: t.categoria,
-        monto: t.monto, fecha: t.fecha, fijo_id: t.fijoId || null
-      })));
-      if(error) throw error;
-    }
-    await supabaseClient.from('pagos').delete().neq('id', '');
-    if(data.pagos.length){
-      const { error } = await supabaseClient.from('pagos').insert(data.pagos.map(p => ({
-        id: p.id, descripcion: p.descripcion, categoria: p.categoria, monto: p.monto,
-        fecha_vencimiento: p.fechaVencimiento, recurrente: !!p.recurrente, fijo_link_id: p.fijoLinkId || null
-      })));
-      if(error) throw error;
-    }
-    await supabaseClient.from('fijos').delete().neq('id', '');
-    if(data.fijos.length){
-      const { error } = await supabaseClient.from('fijos').insert(data.fijos.map(f => ({
-        id: f.id, tipo: f.tipo, descripcion: f.descripcion, categoria: f.categoria,
-        monto: f.monto, dia_mes: f.diaMes, fecha_inicio: f.fechaInicio
-      })));
-      if(error) throw error;
-    }
+    const { error } = await supabaseClient.from('transacciones').upsert(filaMovimiento(t));
+    if(error) throw error;
     marcarSync('ok', 'Guardado en Supabase');
   }catch(e){
-    console.error('No se pudo guardar en Supabase', e);
+    console.error('No se pudo guardar el movimiento en Supabase', e);
     marcarSync('error', 'No se pudo guardar — revisa tu conexión');
+  }
+}
+async function eliminarMovimientoRemoto(id){
+  try{
+    const { error } = await supabaseClient.from('transacciones').delete().eq('id', id);
+    if(error) throw error;
+  }catch(e){
+    console.error('No se pudo eliminar el movimiento en Supabase', e);
+    marcarSync('error', 'No se pudo eliminar — revisa tu conexión');
+  }
+}
+async function guardarPago(p){
+  try{
+    marcarSync('', 'Guardando…');
+    const { error } = await supabaseClient.from('pagos').upsert(filaPago(p));
+    if(error) throw error;
+    marcarSync('ok', 'Guardado en Supabase');
+  }catch(e){
+    console.error('No se pudo guardar el pago en Supabase', e);
+    marcarSync('error', 'No se pudo guardar — revisa tu conexión');
+  }
+}
+async function eliminarPagoRemoto(id){
+  try{
+    const { error } = await supabaseClient.from('pagos').delete().eq('id', id);
+    if(error) throw error;
+  }catch(e){
+    console.error('No se pudo eliminar el pago en Supabase', e);
+    marcarSync('error', 'No se pudo eliminar — revisa tu conexión');
+  }
+}
+async function guardarFijo(f){
+  try{
+    marcarSync('', 'Guardando…');
+    const { error } = await supabaseClient.from('fijos').upsert(filaFijo(f));
+    if(error) throw error;
+    marcarSync('ok', 'Guardado en Supabase');
+  }catch(e){
+    console.error('No se pudo guardar el fijo en Supabase', e);
+    marcarSync('error', 'No se pudo guardar — revisa tu conexión');
+  }
+}
+async function eliminarFijoRemoto(id){
+  try{
+    const { error } = await supabaseClient.from('fijos').delete().eq('id', id);
+    if(error) throw error;
+  }catch(e){
+    console.error('No se pudo eliminar el fijo en Supabase', e);
+    marcarSync('error', 'No se pudo eliminar — revisa tu conexión');
   }
 }
 
@@ -678,10 +715,10 @@ function diasEnMes(anio, mesIndex){
   return new Date(anio, mesIndex+1, 0).getDate();
 }
 
-function generarFijos(){
+async function generarFijos(){
   const hoy = new Date(hoyISO()+'T00:00:00');
   const yFin = hoy.getFullYear(), mFin = hoy.getMonth();
-  data.fijos.filter(f => f.tipo === 'ingreso').forEach(f => {
+  for(const f of data.fijos.filter(f => f.tipo === 'ingreso')){
     const inicio = new Date(f.fechaInicio+'T00:00:00');
     let y = inicio.getFullYear(), m = inicio.getMonth();
     while(y < yFin || (y===yFin && m<=mFin)){
@@ -690,26 +727,29 @@ function generarFijos(){
       if(!yaExiste){
         const dia = Math.min(f.diaMes, diasEnMes(y,m));
         const fecha = mesStr+'-'+String(dia).padStart(2,'0');
-        data.transacciones.push({
+        const nueva = {
           id: 'mov_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
           tipo: f.tipo, descripcion: f.descripcion, categoria: f.categoria,
           monto: f.monto, fecha, fijoId: f.id
-        });
+        };
+        data.transacciones.push(nueva);
+        await guardarMovimiento(nueva);
       }
       m++; if(m>11){ m=0; y++; }
     }
-  });
-  sincronizarVencimientosFijos();
+  }
+  await sincronizarVencimientosFijos();
 }
 
-function sincronizarVencimientosFijos(){
+async function sincronizarVencimientosFijos(){
   const hoy = new Date(hoyISO()+'T00:00:00');
   const y = hoy.getFullYear(), m = hoy.getMonth();
   const dia = diasEnMes(y, m);
-  data.fijos.filter(f => f.tipo === 'gasto').forEach(f => {
+  for(const f of data.fijos.filter(f => f.tipo === 'gasto')){
     const diaVence = Math.min(f.diaMes, dia);
     const fechaVencimiento = y+'-'+String(m+1).padStart(2,'0')+'-'+String(diaVence).padStart(2,'0');
     let pago = data.pagos.find(p => p.fijoLinkId === f.id);
+    let cambiado = false;
     if(!pago){
       pago = {
         id: 'pago_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
@@ -717,14 +757,17 @@ function sincronizarVencimientosFijos(){
         fechaVencimiento, recurrente: true, fijoLinkId: f.id
       };
       data.pagos.push(pago);
-    } else {
+      cambiado = true;
+    } else if(pago.descripcion !== f.descripcion || pago.categoria !== f.categoria || pago.monto !== f.monto || pago.fechaVencimiento !== fechaVencimiento || !pago.recurrente){
       pago.descripcion = f.descripcion;
       pago.categoria = f.categoria;
       pago.monto = f.monto;
       pago.fechaVencimiento = fechaVencimiento;
       pago.recurrente = true;
+      cambiado = true;
     }
-  });
+    if(cambiado) await guardarPago(pago);
+  }
 }
 
 function renderIngresosFijos(){
@@ -780,23 +823,28 @@ async function alternarPagoFijo(id, marcado){
   if(marcado){
     const yaExiste = data.transacciones.some(t => t.fijoId === fijo.id && t.fecha.slice(0,7) === mesActual);
     if(!yaExiste){
-      data.transacciones.push({
+      const nueva = {
         id: 'mov_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
         tipo: 'gasto', descripcion: fijo.descripcion, categoria: fijo.categoria,
         monto: fijo.monto, fecha: hoyISO(), fijoId: fijo.id
-      });
+      };
+      data.transacciones.push(nueva);
+      await guardarMovimiento(nueva);
     }
   } else {
+    const aEliminar = data.transacciones.filter(t => t.fijoId === fijo.id && t.fecha.slice(0,7) === mesActual);
     data.transacciones = data.transacciones.filter(t => !(t.fijoId === fijo.id && t.fecha.slice(0,7) === mesActual));
+    for(const t of aEliminar){ await eliminarMovimientoRemoto(t.id); }
   }
-  await guardarDatos();
   renderTodo();
 }
 
 async function borrarFijo(id){
+  const pagosVinculados = data.pagos.filter(p => p.fijoLinkId === id);
   data.fijos = data.fijos.filter(f => f.id !== id);
   data.pagos = data.pagos.filter(p => p.fijoLinkId !== id);
-  await guardarDatos();
+  await eliminarFijoRemoto(id);
+  for(const p of pagosVinculados){ await eliminarPagoRemoto(p.id); }
   renderTodo();
 }
 
@@ -915,7 +963,7 @@ function renderTodo(){
 
 async function borrarMovimiento(id){
   data.transacciones = data.transacciones.filter(t => t.id !== id);
-  await guardarDatos();
+  await eliminarMovimientoRemoto(id);
   renderTodo();
 }
 
@@ -926,7 +974,7 @@ async function borrarVencimiento(id){
     return;
   }
   data.pagos = data.pagos.filter(p => p.id !== id);
-  await guardarDatos();
+  await eliminarPagoRemoto(id);
   renderTodo();
 }
 
@@ -937,22 +985,25 @@ async function marcarPagado(id){
     await alternarPagoFijo(pago.fijoLinkId, true);
     return;
   }
-  data.transacciones.push({
+  const nuevaTrans = {
     id: 'mov_'+Date.now(),
     tipo: 'gasto',
     descripcion: pago.descripcion,
     categoria: pago.categoria,
     monto: pago.monto,
     fecha: hoyISO()
-  });
+  };
+  data.transacciones.push(nuevaTrans);
+  await guardarMovimiento(nuevaTrans);
   if(pago.recurrente){
     const next = new Date(pago.fechaVencimiento+'T00:00:00');
     next.setMonth(next.getMonth()+1);
     pago.fechaVencimiento = next.toISOString().slice(0,10);
+    await guardarPago(pago);
   } else {
     data.pagos = data.pagos.filter(p => p.id !== id);
+    await eliminarPagoRemoto(id);
   }
-  await guardarDatos();
   renderTodo();
 }
 
@@ -1036,8 +1087,9 @@ document.getElementById('formMovimiento').addEventListener('submit', async (e) =
   const monto = parseFloat(document.getElementById('movMonto').value);
   const fecha = document.getElementById('movFecha').value;
   if(!descripcion || isNaN(monto) || !fecha) return;
-  data.transacciones.push({ id: 'mov_'+Date.now(), tipo: tipoActual, descripcion, categoria, monto, fecha });
-  await guardarDatos();
+  const nuevo = { id: 'mov_'+Date.now(), tipo: tipoActual, descripcion, categoria, monto, fecha };
+  data.transacciones.push(nuevo);
+  await guardarMovimiento(nuevo);
   e.target.reset();
   document.getElementById('movFecha').value = hoyISO();
   renderTodo();
@@ -1050,9 +1102,10 @@ document.getElementById('formFijo').addEventListener('submit', async (e) => {
   const monto = parseFloat(document.getElementById('fijoMonto').value);
   const diaMes = parseInt(document.getElementById('fijoDia').value, 10);
   if(!descripcion || isNaN(monto) || isNaN(diaMes) || diaMes < 1 || diaMes > 31) return;
-  data.fijos.push({ id: 'fijo_'+Date.now(), tipo: fijoTipoActual, descripcion, categoria, monto, diaMes, fechaInicio: hoyISO() });
-  generarFijos();
-  await guardarDatos();
+  const nuevoFijo = { id: 'fijo_'+Date.now(), tipo: fijoTipoActual, descripcion, categoria, monto, diaMes, fechaInicio: hoyISO() };
+  data.fijos.push(nuevoFijo);
+  await guardarFijo(nuevoFijo);
+  await generarFijos();
   e.target.reset();
   document.getElementById('fijoDia').value = '';
   renderTodo();
@@ -1066,8 +1119,9 @@ document.getElementById('formVencimiento').addEventListener('submit', async (e) 
   const fechaVencimiento = document.getElementById('pagoFecha').value;
   const recurrente = document.getElementById('pagoRecurrente').checked;
   if(!descripcion || isNaN(monto) || !fechaVencimiento) return;
-  data.pagos.push({ id: 'pago_'+Date.now(), descripcion, categoria, monto, fechaVencimiento, recurrente });
-  await guardarDatos();
+  const nuevoPago = { id: 'pago_'+Date.now(), descripcion, categoria, monto, fechaVencimiento, recurrente };
+  data.pagos.push(nuevoPago);
+  await guardarPago(nuevoPago);
   e.target.reset();
   renderTodo();
 });
@@ -1076,8 +1130,7 @@ document.getElementById('formVencimiento').addEventListener('submit', async (e) 
   poblarCategorias();
   document.getElementById('movFecha').value = hoyISO();
   await cargarDatos();
-  try{ generarFijos(); }catch(e){ console.error('Error generando fijos:', e); }
-  await guardarDatos();
+  try{ await generarFijos(); }catch(e){ console.error('Error generando fijos:', e); }
   renderTodo();
   suscribirCambiosEnVivo();
   setInterval(refrescar, 15000);
