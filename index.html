@@ -462,6 +462,7 @@
     <button data-tab="resumen" class="active">Resumen</button>
     <button data-tab="movimientos">Movimientos</button>
     <button data-tab="fijos">Fijos</button>
+    <button data-tab="registrar-pagos">Registrar pagos</button>
     <button data-tab="vencimientos">Vencimientos</button>
   </nav>
 
@@ -539,7 +540,13 @@
       <p class="empty" style="padding:0 0 10px 0;">Se registran solos cada mes en el día indicado.</p>
       <div id="listaIngresosFijos"></div>
 
-      <h3>Gastos fijos de este mes</h3>
+      <h3>Gastos fijos</h3>
+      <p class="empty" style="padding:0 0 10px 0;">Para marcarlos como pagados cada mes, ve a la pestaña "Registrar pagos".</p>
+      <div id="listaGastosFijosDefiniciones"></div>
+    </section>
+
+    <section id="tab-registrar-pagos">
+      <h2>Registrar pagos del mes</h2>
       <p class="empty" id="resumenGastosFijos" style="padding:0 0 10px 0;"></p>
       <div id="listaGastosFijosMes"></div>
     </section>
@@ -869,13 +876,34 @@ function renderIngresosFijos(){
     + '</tbody></table>';
 }
 
+function renderGastosFijosDefiniciones(){
+  const cont = document.getElementById('listaGastosFijosDefiniciones');
+  const gastos = data.fijos.filter(f => f.tipo === 'gasto');
+  if(gastos.length === 0){
+    cont.innerHTML = '<p class="empty">No tienes gastos fijos configurados.</p>';
+    return;
+  }
+  cont.innerHTML = `<table><thead><tr><th>Día del mes</th><th>Descripción</th><th>Categoría</th><th style="text-align:right;">Monto</th><th></th></tr></thead><tbody>`
+    + gastos.map(f => `<tr>
+        <td>${f.diaMes}</td>
+        <td>${f.descripcion}</td>
+        <td>${f.categoria}</td>
+        <td class="amount gasto">- ${fmt(f.monto)}</td>
+        <td class="row-actions">
+          <button class="btn-ghost" onclick="iniciarEdicionFijo('${f.id}')">Editar</button>
+          <button class="btn-ghost" onclick="borrarFijo('${f.id}')">Eliminar</button>
+        </td>
+      </tr>`).join('')
+    + '</tbody></table>';
+}
+
 function renderGastosFijosMes(){
   const cont = document.getElementById('listaGastosFijosMes');
   const resumen = document.getElementById('resumenGastosFijos');
   const mesActual = hoyISO().slice(0,7);
   const gastos = data.fijos.filter(f => f.tipo === 'gasto');
   if(gastos.length === 0){
-    cont.innerHTML = '<p class="empty">No tienes gastos fijos configurados.</p>';
+    cont.innerHTML = '<p class="empty">No tienes gastos fijos configurados. Agrégalos desde la pestaña "Fijos".</p>';
     resumen.textContent = '';
     return;
   }
@@ -895,8 +923,6 @@ function renderGastosFijosMes(){
         <span class="ci-desc">${i.descripcion}<span class="ci-cat">${i.categoria} · día ${i.diaMes}</span></span>
         <span class="ci-monto">${fmt(i.monto)}</span>
       </label>
-      <button class="btn-ghost" onclick="iniciarEdicionFijo('${i.id}')">Editar</button>
-      <button class="btn-ghost" onclick="borrarFijo('${i.id}')">Eliminar</button>
     </div>
   `).join('');
 }
@@ -1045,6 +1071,7 @@ function renderTodo(){
   try{ renderResumen(); }catch(e){ console.error('Error en resumen:', e); }
   try{ renderMovimientos(); }catch(e){ console.error('Error en movimientos:', e); }
   try{ renderIngresosFijos(); }catch(e){ console.error('Error en ingresos fijos:', e); }
+  try{ renderGastosFijosDefiniciones(); }catch(e){ console.error('Error en definiciones de gastos fijos:', e); }
   try{ renderGastosFijosMes(); }catch(e){ console.error('Error en gastos fijos:', e); }
   try{ renderVencimientos(); }catch(e){ console.error('Error en vencimientos:', e); }
   try{ revisarNotificaciones(); }catch(e){ console.error('Error en notificaciones:', e); }
