@@ -319,15 +319,22 @@
   .badge.urgente{background:var(--gold); color:#3A2A08;}
   .badge.ok{background:var(--ledger-green-soft); color:#1F3A28;}
 
+  .check-item-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:10px 8px;
+    border-bottom:1px solid var(--paper-line);
+  }
   .check-item{
     display:flex;
     align-items:center;
     gap:10px;
-    padding:10px 8px;
-    border-bottom:1px solid var(--paper-line);
+    flex:1;
     font-family:'IBM Plex Mono',monospace;
     font-size:13.5px;
     cursor:pointer;
+    min-width:0;
   }
   .check-item input[type="checkbox"]{
     width:18px; height:18px;
@@ -335,7 +342,7 @@
     accent-color: var(--ledger-green);
     cursor:pointer;
   }
-  .check-item .ci-desc{flex:1;}
+  .check-item .ci-desc{flex:1; min-width:0;}
   .check-item .ci-cat{
     display:block;
     font-size:10.5px;
@@ -349,9 +356,9 @@
     color:var(--margin-red);
     white-space:nowrap;
   }
-  .check-item.pagado{opacity:0.55;}
-  .check-item.pagado .ci-desc, .check-item.pagado .ci-monto{text-decoration:line-through;}
-  .check-item.pagado .ci-monto{color:var(--ledger-green);}
+  .check-item-row.pagado{opacity:0.55;}
+  .check-item-row.pagado .ci-desc, .check-item-row.pagado .ci-monto{text-decoration:line-through;}
+  .check-item-row.pagado .ci-monto{color:var(--ledger-green);}
 
   .sync-row{
     display:flex;
@@ -497,7 +504,8 @@
           <label for="fijoDia">Día del mes</label>
           <input type="number" id="fijoDia" min="1" max="31" placeholder="1-31" required>
         </div>
-        <button type="submit" class="btn-primary">Agregar</button>
+        <button type="submit" class="btn-primary" id="btnFijoSubmit">Agregar</button>
+        <button type="button" class="btn-ghost" id="btnCancelarEdicionFijo" style="display:none;">Cancelar edición</button>
       </form>
 
       <h3>Ingresos fijos</h3>
@@ -550,6 +558,29 @@ const CATS_GASTO = ["Alquiler / Hipoteca","Servicios (luz, agua, internet)","Ali
 let data = { transacciones: [], pagos: [], fijos: [] };
 let tipoActual = 'ingreso';
 let fijoTipoActual = 'ingreso';
+let editandoFijoId = null;
+
+function iniciarEdicionFijo(id){
+  const fijo = data.fijos.find(f => f.id === id);
+  if(!fijo) return;
+  editandoFijoId = id;
+  cambiarTipoFijo(fijo.tipo);
+  document.getElementById('fijoCategoria').value = fijo.categoria;
+  document.getElementById('fijoDescripcion').value = fijo.descripcion;
+  document.getElementById('fijoMonto').value = fijo.monto;
+  document.getElementById('fijoDia').value = fijo.diaMes;
+  document.getElementById('btnFijoSubmit').textContent = 'Guardar cambios';
+  document.getElementById('btnCancelarEdicionFijo').style.display = 'inline-block';
+  document.getElementById('fijoDescripcion').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function cancelarEdicionFijo(){
+  editandoFijoId = null;
+  document.getElementById('formFijo').reset();
+  document.getElementById('fijoDia').value = '';
+  document.getElementById('btnFijoSubmit').textContent = 'Agregar';
+  document.getElementById('btnCancelarEdicionFijo').style.display = 'none';
+}
 const DIAS_ALERTA = 7;
 
 const fmt = (n) => 'S/ ' + Number(n).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
@@ -803,7 +834,10 @@ function renderIngresosFijos(){
         <td>${f.descripcion}</td>
         <td>${f.categoria}</td>
         <td class="amount ingreso">+ ${fmt(f.monto)}</td>
-        <td class="row-actions"><button class="btn-ghost" onclick="borrarFijo('${f.id}')">Eliminar</button></td>
+        <td class="row-actions">
+          <button class="btn-ghost" onclick="iniciarEdicionFijo('${f.id}')">Editar</button>
+          <button class="btn-ghost" onclick="borrarFijo('${f.id}')">Eliminar</button>
+        </td>
       </tr>`).join('')
     + '</tbody></table>';
 }
@@ -828,11 +862,15 @@ function renderGastosFijosMes(){
   resumen.textContent = pagadosCount+' de '+items.length+' pagados este mes · Pendiente: '+fmt(totalPendiente);
 
   cont.innerHTML = items.map(i => `
-    <label class="check-item ${i.pagado?'pagado':''}">
-      <input type="checkbox" ${i.pagado?'checked':''} onchange="alternarPagoFijo('${i.id}', this.checked)">
-      <span class="ci-desc">${i.descripcion}<span class="ci-cat">${i.categoria} · día ${i.diaMes}</span></span>
-      <span class="ci-monto">${fmt(i.monto)}</span>
-    </label>
+    <div class="check-item-row ${i.pagado?'pagado':''}">
+      <label class="check-item">
+        <input type="checkbox" ${i.pagado?'checked':''} onchange="alternarPagoFijo('${i.id}', this.checked)">
+        <span class="ci-desc">${i.descripcion}<span class="ci-cat">${i.categoria} · día ${i.diaMes}</span></span>
+        <span class="ci-monto">${fmt(i.monto)}</span>
+      </label>
+      <button class="btn-ghost" onclick="iniciarEdicionFijo('${i.id}')">Editar</button>
+      <button class="btn-ghost" onclick="borrarFijo('${i.id}')">Eliminar</button>
+    </div>
   `).join('');
 }
 
@@ -1115,6 +1153,10 @@ document.getElementById('formMovimiento').addEventListener('submit', async (e) =
   renderTodo();
 });
 
+document.getElementById('btnCancelarEdicionFijo').addEventListener('click', () => {
+  cancelarEdicionFijo();
+});
+
 document.getElementById('formFijo').addEventListener('submit', async (e) => {
   e.preventDefault();
   const descripcion = document.getElementById('fijoDescripcion').value.trim();
@@ -1122,12 +1164,35 @@ document.getElementById('formFijo').addEventListener('submit', async (e) => {
   const monto = parseFloat(document.getElementById('fijoMonto').value);
   const diaMes = parseInt(document.getElementById('fijoDia').value, 10);
   if(!descripcion || isNaN(monto) || isNaN(diaMes) || diaMes < 1 || diaMes > 31) return;
-  const nuevoFijo = { id: 'fijo_'+Date.now(), tipo: fijoTipoActual, descripcion, categoria, monto, diaMes, fechaInicio: hoyISO() };
-  data.fijos.push(nuevoFijo);
-  await guardarFijo(nuevoFijo);
-  await generarFijos();
-  e.target.reset();
-  document.getElementById('fijoDia').value = '';
+
+  if(editandoFijoId){
+    const fijo = data.fijos.find(f => f.id === editandoFijoId);
+    if(fijo){
+      const tipoAnterior = fijo.tipo;
+      fijo.tipo = fijoTipoActual;
+      fijo.descripcion = descripcion;
+      fijo.categoria = categoria;
+      fijo.monto = monto;
+      fijo.diaMes = diaMes;
+      await guardarFijo(fijo);
+      if(tipoAnterior === 'gasto' && fijoTipoActual === 'ingreso'){
+        const pagoViejo = data.pagos.find(p => p.fijoLinkId === fijo.id);
+        if(pagoViejo){
+          data.pagos = data.pagos.filter(p => p.id !== pagoViejo.id);
+          await eliminarPagoRemoto(pagoViejo.id);
+        }
+      }
+      await generarFijos();
+    }
+    cancelarEdicionFijo();
+  } else {
+    const nuevoFijo = { id: 'fijo_'+Date.now(), tipo: fijoTipoActual, descripcion, categoria, monto, diaMes, fechaInicio: hoyISO() };
+    data.fijos.push(nuevoFijo);
+    await guardarFijo(nuevoFijo);
+    await generarFijos();
+    e.target.reset();
+    document.getElementById('fijoDia').value = '';
+  }
   renderTodo();
 });
 
