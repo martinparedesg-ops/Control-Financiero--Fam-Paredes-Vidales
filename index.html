@@ -615,6 +615,8 @@ async function cargarDatos(){
   normalizarDatos();
 }
 
+let operacionesEnCurso = 0;
+
 function filaMovimiento(t){
   return { id: t.id, tipo: t.tipo, descripcion: t.descripcion, categoria: t.categoria, monto: t.monto, fecha: t.fecha, fijo_id: t.fijoId || null };
 }
@@ -626,6 +628,7 @@ function filaFijo(f){
 }
 
 async function guardarMovimiento(t){
+  operacionesEnCurso++;
   try{
     marcarSync('', 'Guardando…');
     const { error } = await supabaseClient.from('transacciones').upsert(filaMovimiento(t));
@@ -634,18 +637,24 @@ async function guardarMovimiento(t){
   }catch(e){
     console.error('No se pudo guardar el movimiento en Supabase', e);
     marcarSync('error', 'No se pudo guardar — revisa tu conexión');
+  } finally {
+    operacionesEnCurso--;
   }
 }
 async function eliminarMovimientoRemoto(id){
+  operacionesEnCurso++;
   try{
     const { error } = await supabaseClient.from('transacciones').delete().eq('id', id);
     if(error) throw error;
   }catch(e){
     console.error('No se pudo eliminar el movimiento en Supabase', e);
     marcarSync('error', 'No se pudo eliminar — revisa tu conexión');
+  } finally {
+    operacionesEnCurso--;
   }
 }
 async function guardarPago(p){
+  operacionesEnCurso++;
   try{
     marcarSync('', 'Guardando…');
     const { error } = await supabaseClient.from('pagos').upsert(filaPago(p));
@@ -654,18 +663,24 @@ async function guardarPago(p){
   }catch(e){
     console.error('No se pudo guardar el pago en Supabase', e);
     marcarSync('error', 'No se pudo guardar — revisa tu conexión');
+  } finally {
+    operacionesEnCurso--;
   }
 }
 async function eliminarPagoRemoto(id){
+  operacionesEnCurso++;
   try{
     const { error } = await supabaseClient.from('pagos').delete().eq('id', id);
     if(error) throw error;
   }catch(e){
     console.error('No se pudo eliminar el pago en Supabase', e);
     marcarSync('error', 'No se pudo eliminar — revisa tu conexión');
+  } finally {
+    operacionesEnCurso--;
   }
 }
 async function guardarFijo(f){
+  operacionesEnCurso++;
   try{
     marcarSync('', 'Guardando…');
     const { error } = await supabaseClient.from('fijos').upsert(filaFijo(f));
@@ -674,15 +689,20 @@ async function guardarFijo(f){
   }catch(e){
     console.error('No se pudo guardar el fijo en Supabase', e);
     marcarSync('error', 'No se pudo guardar — revisa tu conexión');
+  } finally {
+    operacionesEnCurso--;
   }
 }
 async function eliminarFijoRemoto(id){
+  operacionesEnCurso++;
   try{
     const { error } = await supabaseClient.from('fijos').delete().eq('id', id);
     if(error) throw error;
   }catch(e){
     console.error('No se pudo eliminar el fijo en Supabase', e);
     marcarSync('error', 'No se pudo eliminar — revisa tu conexión');
+  } finally {
+    operacionesEnCurso--;
   }
 }
 
@@ -1026,7 +1046,7 @@ function revisarNotificaciones(){
 
 let refrescando = false;
 async function refrescar(){
-  if(refrescando) return;
+  if(refrescando || operacionesEnCurso > 0) return;
   refrescando = true;
   try{
     await cargarDatos();
