@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -809,32 +810,38 @@ async function generarFijos(){
   await sincronizarVencimientosFijos();
 }
 
+function calcularFechaDesplazada(fechaActual, diaMes, delta){
+  let [y, m] = fechaActual.split('-').map(Number);
+  m += delta;
+  while(m > 12){ m -= 12; y++; }
+  while(m < 1){ m += 12; y--; }
+  const dia = Math.min(diaMes, diasEnMes(y, m-1));
+  return y+'-'+String(m).padStart(2,'0')+'-'+String(dia).padStart(2,'0');
+}
+
 async function sincronizarVencimientosFijos(){
   const hoy = new Date(hoyISO()+'T00:00:00');
   const y = hoy.getFullYear(), m = hoy.getMonth();
   const dia = diasEnMes(y, m);
   for(const f of data.fijos.filter(f => f.tipo === 'gasto')){
-    const diaVence = Math.min(f.diaMes, dia);
-    const fechaVencimiento = y+'-'+String(m+1).padStart(2,'0')+'-'+String(diaVence).padStart(2,'0');
     let pago = data.pagos.find(p => p.fijoLinkId === f.id);
-    let cambiado = false;
     if(!pago){
+      const diaVence = Math.min(f.diaMes, dia);
+      const fechaVencimiento = y+'-'+String(m+1).padStart(2,'0')+'-'+String(diaVence).padStart(2,'0');
       pago = {
         id: 'pago_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
         descripcion: f.descripcion, categoria: f.categoria, monto: f.monto,
         fechaVencimiento, recurrente: true, fijoLinkId: f.id
       };
       data.pagos.push(pago);
-      cambiado = true;
-    } else if(pago.descripcion !== f.descripcion || pago.categoria !== f.categoria || pago.monto !== f.monto || pago.fechaVencimiento !== fechaVencimiento || !pago.recurrente){
+      await guardarPago(pago);
+    } else if(pago.descripcion !== f.descripcion || pago.categoria !== f.categoria || pago.monto !== f.monto || !pago.recurrente){
       pago.descripcion = f.descripcion;
       pago.categoria = f.categoria;
       pago.monto = f.monto;
-      pago.fechaVencimiento = fechaVencimiento;
       pago.recurrente = true;
-      cambiado = true;
+      await guardarPago(pago);
     }
-    if(cambiado) await guardarPago(pago);
   }
 }
 
@@ -914,6 +921,7 @@ async function alternarPagoFijo(id, marcado){
   const fijo = data.fijos.find(f => f.id === id && f.tipo === 'gasto');
   if(!fijo) return;
   const mesActual = hoyISO().slice(0,7);
+  const pago = data.pagos.find(p => p.fijoLinkId === fijo.id);
   if(marcado){
     const yaExiste = data.transacciones.some(t => t.fijoId === fijo.id && t.fecha.slice(0,7) === mesActual);
     if(!yaExiste){
@@ -925,10 +933,18 @@ async function alternarPagoFijo(id, marcado){
       data.transacciones.push(nueva);
       await guardarMovimiento(nueva);
     }
+    if(pago){
+      pago.fechaVencimiento = calcularFechaDesplazada(pago.fechaVencimiento, fijo.diaMes, 1);
+      await guardarPago(pago);
+    }
   } else {
     const aEliminar = data.transacciones.filter(t => t.fijoId === fijo.id && t.fecha.slice(0,7) === mesActual);
     data.transacciones = data.transacciones.filter(t => !(t.fijoId === fijo.id && t.fecha.slice(0,7) === mesActual));
     for(const t of aEliminar){ await eliminarMovimientoRemoto(t.id); }
+    if(pago){
+      pago.fechaVencimiento = calcularFechaDesplazada(pago.fechaVencimiento, fijo.diaMes, -1);
+      await guardarPago(pago);
+    }
   }
   renderTodo();
 }
@@ -1119,6 +1135,7 @@ async function refrescar(){
   refrescando = true;
   try{
     await cargarDatos();
+    try{ await generarFijos(); }catch(e){ console.error('Error generando fijos:', e); }
     renderTodo();
   } finally {
     refrescando = false;
